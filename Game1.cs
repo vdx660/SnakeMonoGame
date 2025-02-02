@@ -33,7 +33,9 @@ namespace Snake
         private GameState _currentGameState = GameState.Menu;
 
         private SpriteFont _menuFont;
-        private string[] _menuItems = { "Human Player", "AI Player" };
+
+        private string[] _menuItems = { "Human Player", "AI Player", "AI Player Advanced" };
+
         private int _selectedIndex = 0;
 
         private bool _isAI = false;
@@ -44,11 +46,19 @@ namespace Snake
 
         private int _score = 0;
 
+        private GameMode _gameMode;
+
         public enum GameState
         {
             Menu,
             Playing,
             GameOver
+        }
+        public enum GameMode
+        {
+            Human,
+            AI,
+            AIAdvanced
         }
 
 
@@ -113,10 +123,18 @@ namespace Snake
                 }
                 else
                 {
-                    if (_isAI)
-                        UpdateAI(gameTime);
-                    else
+                    if (_gameMode == GameMode.Human)
+                    {
                         HandleInput();
+                    }
+                    else if (_gameMode == GameMode.AI)
+                    {
+                        UpdateAI(gameTime); // Basic AI
+                    }
+                    else if (_gameMode == GameMode.AIAdvanced)
+                    {
+                        UpdateAIAdvanced(gameTime); // Advanced AI
+                    }
 
                     _timer += (float)gameTime.ElapsedGameTime.TotalMilliseconds;
 
@@ -129,7 +147,6 @@ namespace Snake
             }
             else if (_currentGameState == GameState.GameOver)
             {
-                // Wait for the player to press Enter to return to the menu
                 if (state.IsKeyDown(Keys.Enter) && !_previousState.IsKeyDown(Keys.Enter))
                 {
                     _currentGameState = GameState.Menu;
@@ -141,6 +158,7 @@ namespace Snake
 
             base.Update(gameTime);
         }
+
 
         protected override void Draw(GameTime gameTime)
         {
@@ -166,22 +184,19 @@ namespace Snake
             base.Draw(gameTime);
         }
 
-
         private void DrawMenu()
         {
-            string title = "Snake Game";
-            Vector2 titleSize = _menuFont.MeasureString(title);
-            _spriteBatch.DrawString(_menuFont, title, new Vector2(
-                (GraphicsDevice.Viewport.Width - titleSize.X) / 2,
-                100), Color.White);
-
+            Vector2 size = _menuFont.MeasureString("Snake Game");
+            _spriteBatch.DrawString(_menuFont, "Snake Game", new Vector2(
+                (GraphicsDevice.Viewport.Width - size.X) / 2,
+                (GraphicsDevice.Viewport.Height - size.Y) / 2 - 100), Color.White);
             for (int i = 0; i < _menuItems.Length; i++)
             {
                 Color color = i == _selectedIndex ? Color.Yellow : Color.White;
-                Vector2 size = _menuFont.MeasureString(_menuItems[i]);
+                size = _menuFont.MeasureString(_menuItems[i]);
                 _spriteBatch.DrawString(_menuFont, _menuItems[i], new Vector2(
                     (GraphicsDevice.Viewport.Width - size.X) / 2,
-                    200 + i * 40), color);
+                    (GraphicsDevice.Viewport.Height - size.Y) / 2 + i * 30), color);
             }
         }
 
@@ -198,8 +213,22 @@ namespace Snake
 
             // Draw score (optional)
             _spriteBatch.DrawString(_menuFont, $"Score: {_score}", new Vector2(10, 10), Color.White);
-        }
 
+            // Display the game mode
+            string modeText = "";
+            if (_gameMode == GameMode.Human)
+                modeText = "Mode: Human Player";
+            else if (_gameMode == GameMode.AI)
+                modeText = "Mode: AI Player";
+            else if (_gameMode == GameMode.AIAdvanced)
+                modeText = "Mode: AI Player Advanced";
+
+            Vector2 modeSize = _menuFont.MeasureString(modeText);
+            _spriteBatch.DrawString(_menuFont, modeText, new Vector2(
+                GraphicsDevice.Viewport.Width - modeSize.X - 10,
+                10), Color.White);
+
+        }
 
         private void DrawGameOver()
         {
@@ -230,14 +259,28 @@ namespace Snake
             }
             else if (state.IsKeyDown(Keys.Enter) && !_previousState.IsKeyDown(Keys.Enter))
             {
-                _isAI = _selectedIndex == 1; // Index 1 is AI Player
+                // Set the game mode based on the selected index
+                switch (_selectedIndex)
+                {
+                    case 0:
+                        _gameMode = GameMode.Human;
+                        break;
+                    case 1:
+                        _gameMode = GameMode.AI;
+                        break;
+                    case 2:
+                        _gameMode = GameMode.AIAdvanced;
+                        break;
+                }
+
                 ResetGame();
                 _currentGameState = GameState.Playing;
             }
 
-            // Update the previous keyboard state
+            // Update previous keyboard state
             _previousState = state;
         }
+
 
         private void HandleInput()
         {
@@ -301,14 +344,25 @@ namespace Snake
         }
 
 
-        private void ResetGame()
+        private void    ResetGame()
         {
             _snake.Clear();
             _direction = new Vector2(1, 0);
             _timer = 0f;
-            _interval = 100f;
             _gameOver = false;
             _score = 0;
+            switch (_gameMode)
+            {
+                case GameMode.Human:
+                    _interval = 100f;
+                    break;
+                case GameMode.AI:
+                    _interval = 80f; // Faster for AI
+                    break;
+                case GameMode.AIAdvanced:
+                    _interval = 60f; // Even faster for advanced AI
+                    break;
+            }
 
             // Add the initial snake segment
             _snake.Add(new Vector2(
@@ -390,6 +444,44 @@ namespace Snake
             return directions;
         }
 
+        private void UpdateAIAdvanced(GameTime gameTime)
+        {
+            Vector2 head = _snake[0];
+
+            // Get directions prioritized towards the food
+            List<Vector2> possibleDirections = GetPrioritizedDirections(head, _foodPosition);
+
+            // Find a safe direction using lookahead
+            foreach (var dir in possibleDirections)
+            {
+                if (!IsFutureCollision(dir))
+                {
+                    _direction = dir;
+                    return;
+                }
+            }
+
+            // If no safe direction towards food, consider all directions
+            List<Vector2> allDirections = new List<Vector2>
+            {
+                new Vector2(0, -1), // Up
+                new Vector2(0, 1),  // Down
+                new Vector2(-1, 0), // Left
+                new Vector2(1, 0)   // Right
+            };
+
+            foreach (var dir in allDirections)
+            {
+                if (!IsFutureCollision(dir))
+                {
+                    _direction = dir;
+                    return;
+                }
+            }
+
+            // If all moves lead to collision, proceed with current direction (may result in game over)
+        }
+
 
         private bool IsCollision(Vector2 position)
         {
@@ -409,5 +501,27 @@ namespace Snake
 
             return false;
         }
+
+        private bool IsFutureCollision(Vector2 direction)
+        {
+            Vector2 newHeadPosition = _snake[0] + direction * _size;
+
+            // Check wall collisions
+            if (newHeadPosition.X < 0 || newHeadPosition.X >= _graphics.PreferredBackBufferWidth ||
+                newHeadPosition.Y < 0 || newHeadPosition.Y >= _graphics.PreferredBackBufferHeight)
+            {
+                return true;
+            }
+
+            // Check self-collision (excluding tail if not growing)
+            for (int i = 0; i < _snake.Count - 1; i++)
+            {
+                if (_snake[i] == newHeadPosition)
+                    return true;
+            }
+
+            return false;
+        }
+
     }
 }
