@@ -17,7 +17,7 @@ namespace Snake
         private Vector2 _direction = new Vector2(1, 0); // Start moving to the right
         private float _timer = 0f;
         private float _interval = 100f; // Snake moves every 100 milliseconds
-        private int _size = 20; // Size of the snake segment
+        private int _size = 25; // Size of the snake segment
         private bool _gameOver = false;
 
         // Food properties
@@ -40,6 +40,8 @@ namespace Snake
 
         private Vector2 _previousDirection;
 
+        private KeyboardState _previousState;
+
         private int _score = 0;
 
         public enum GameState
@@ -55,12 +57,27 @@ namespace Snake
             _graphics = new GraphicsDeviceManager(this);
             Content.RootDirectory = "Content";
             IsMouseVisible = true;
+
+            // Set the preferred window size
+            _graphics.PreferredBackBufferWidth = 1024; // Desired width
+            _graphics.PreferredBackBufferHeight = 768; // Desired height
+            _graphics.ApplyChanges();
+
+            Window.AllowUserResizing = true;
+            Window.ClientSizeChanged += Window_ClientSizeChanged; ;
+        }
+
+        private void Window_ClientSizeChanged(object sender, EventArgs e)
+        {
+            _graphics.PreferredBackBufferWidth = Window.ClientBounds.Width;
+            _graphics.PreferredBackBufferHeight = Window.ClientBounds.Height;
+            _graphics.ApplyChanges();
         }
 
         protected override void Initialize()
         {
             // TODO: Add your initialization logic here
-
+            _previousState = Keyboard.GetState();
             base.Initialize();
         }
 
@@ -82,6 +99,8 @@ namespace Snake
 
         protected override void Update(GameTime gameTime)
         {
+            KeyboardState state = Keyboard.GetState();
+
             if (_currentGameState == GameState.Menu)
             {
                 UpdateMenu();
@@ -110,17 +129,18 @@ namespace Snake
             }
             else if (_currentGameState == GameState.GameOver)
             {
-                if (Keyboard.GetState().IsKeyDown(Keys.Enter))
+                // Wait for the player to press Enter to return to the menu
+                if (state.IsKeyDown(Keys.Enter) && !_previousState.IsKeyDown(Keys.Enter))
                 {
-                    ResetGame();
                     _currentGameState = GameState.Menu;
                 }
             }
 
+            // Update the previous keyboard state
+            _previousState = state;
+
             base.Update(gameTime);
         }
-
-
 
         protected override void Draw(GameTime gameTime)
         {
@@ -187,37 +207,37 @@ namespace Snake
             Vector2 size = _menuFont.MeasureString(gameOverText);
             _spriteBatch.DrawString(_menuFont, gameOverText, new Vector2(
                 (GraphicsDevice.Viewport.Width - size.X) / 2,
-                (GraphicsDevice.Viewport.Height - size.Y) / 2), Color.Red);
+                (GraphicsDevice.Viewport.Height - size.Y) / 2 - 20), Color.Red);
 
             string instructions = "Press Enter to return to Menu";
             size = _menuFont.MeasureString(instructions);
             _spriteBatch.DrawString(_menuFont, instructions, new Vector2(
                 (GraphicsDevice.Viewport.Width - size.X) / 2,
-                (GraphicsDevice.Viewport.Height - size.Y) / 2 + 40), Color.White);
+                (GraphicsDevice.Viewport.Height - size.Y) / 2 + 20), Color.White);
         }
 
         private void UpdateMenu()
         {
             KeyboardState state = Keyboard.GetState();
 
-            if (state.IsKeyDown(Keys.Up))
+            if (state.IsKeyDown(Keys.Up) && !_previousState.IsKeyDown(Keys.Up))
             {
                 _selectedIndex = (_selectedIndex - 1 + _menuItems.Length) % _menuItems.Length;
             }
-            else if (state.IsKeyDown(Keys.Down))
+            else if (state.IsKeyDown(Keys.Down) && !_previousState.IsKeyDown(Keys.Down))
             {
                 _selectedIndex = (_selectedIndex + 1) % _menuItems.Length;
             }
-            else if (state.IsKeyDown(Keys.Enter))
+            else if (state.IsKeyDown(Keys.Enter) && !_previousState.IsKeyDown(Keys.Enter))
             {
                 _isAI = _selectedIndex == 1; // Index 1 is AI Player
-                _currentGameState = GameState.Playing;
-
-                // Reset the game when starting
                 ResetGame();
+                _currentGameState = GameState.Playing;
             }
-        }
 
+            // Update the previous keyboard state
+            _previousState = state;
+        }
 
         private void HandleInput()
         {
@@ -262,8 +282,8 @@ namespace Snake
 
         private void SpawnFood()
         {
-            int maxX = _graphics.PreferredBackBufferWidth / _size;
-            int maxY = _graphics.PreferredBackBufferHeight / _size;
+            int maxX = (_graphics.PreferredBackBufferWidth / _size);
+            int maxY = (_graphics.PreferredBackBufferHeight / _size);
 
             _foodPosition = new Vector2(
                 _random.Next(0, maxX) * _size,
@@ -280,6 +300,7 @@ namespace Snake
             }
         }
 
+
         private void ResetGame()
         {
             _snake.Clear();
@@ -291,8 +312,8 @@ namespace Snake
 
             // Add the initial snake segment
             _snake.Add(new Vector2(
-                GraphicsDevice.Viewport.Width / 2,
-                GraphicsDevice.Viewport.Height / 2));
+                (_graphics.PreferredBackBufferWidth / 2) / _size * _size,
+                (_graphics.PreferredBackBufferHeight / 2) / _size * _size));
 
             SpawnFood();
         }
@@ -304,60 +325,71 @@ namespace Snake
         /// <param name="gameTime"></param>
         private void UpdateAI(GameTime gameTime)
         {
-            Vector2 currentDirection = _direction;
-
             Vector2 head = _snake[0];
 
-            // Determine the direction to the food
-            Vector2 directionToFood = Vector2.Zero;
-
-            // Ensure the snake doesn't reverse
-            if (_direction + _previousDirection == Vector2.Zero)
+            // List of possible directions: Up, Down, Left, Right
+            List<Vector2> possibleDirections = new List<Vector2>
             {
-                _direction = _previousDirection;
-            }
-            _previousDirection = _direction;
+                new Vector2(0, -1), // Up
+                new Vector2(0, 1),  // Down
+                new Vector2(-1, 0), // Left
+                new Vector2(1, 0)   // Right
+            };
 
-            if (_foodPosition.X < head.X)
-                directionToFood.X = -1;
-            else if (_foodPosition.X > head.X)
-                directionToFood.X = 1;
+            // Prioritize directions towards the food
+            possibleDirections = GetPrioritizedDirections(head, _foodPosition);
 
-            if (_foodPosition.Y < head.Y)
-                directionToFood.Y = -1;
-            else if (_foodPosition.Y > head.Y)
-                directionToFood.Y = 1;
-
-            // Prioritize horizontal or vertical movement
-            if (Math.Abs(_foodPosition.X - head.X) > Math.Abs(_foodPosition.Y - head.Y))
-                _direction = new Vector2(directionToFood.X, 0);
-            else
-                _direction = new Vector2(0, directionToFood.Y);
-
-            // Check for collisions with walls or self and adjust direction
-            Vector2 newHeadPosition = head + _direction * _size;
-            if (IsCollision(newHeadPosition))
+            // Find a safe direction
+            foreach (var dir in possibleDirections)
             {
-                // Try alternate directions
-                Vector2[] possibleDirections = new Vector2[]
-                {
-            new Vector2(0, -1), // Up
-            new Vector2(0, 1),  // Down
-            new Vector2(-1, 0), // Left
-            new Vector2(1, 0)   // Right
-                };
+                Vector2 newHeadPosition = head + dir * _size;
 
-                foreach (var dir in possibleDirections)
+                if (!IsCollision(newHeadPosition))
                 {
-                    newHeadPosition = head + dir * _size;
-                    if (!IsCollision(newHeadPosition))
-                    {
-                        _direction = dir;
-                        break;
-                    }
+                    // Safe to move in this direction
+                    _direction = dir;
+                    return;
                 }
             }
+
+            // If no safe directions, keep current direction (may result in collision)
+            // Alternatively, could implement logic to move back or stay in place
         }
+
+        private List<Vector2> GetPrioritizedDirections(Vector2 head, Vector2 target)
+        {
+            List<Vector2> directions = new List<Vector2>();
+
+            // Determine horizontal and vertical directions towards the target
+            if (target.X < head.X)
+                directions.Add(new Vector2(-1, 0)); // Left
+            else if (target.X > head.X)
+                directions.Add(new Vector2(1, 0));  // Right
+
+            if (target.Y < head.Y)
+                directions.Add(new Vector2(0, -1)); // Up
+            else if (target.Y > head.Y)
+                directions.Add(new Vector2(0, 1));  // Down
+
+            // Add the remaining directions
+            List<Vector2> allDirections = new List<Vector2>
+            {
+                new Vector2(0, -1), // Up
+                new Vector2(0, 1),  // Down
+                new Vector2(-1, 0), // Left
+                new Vector2(1, 0)   // Right
+            };
+
+            // Add directions not already in the list
+            foreach (var dir in allDirections)
+            {
+                if (!directions.Contains(dir))
+                    directions.Add(dir);
+            }
+
+            return directions;
+        }
+
 
         private bool IsCollision(Vector2 position)
         {
@@ -368,10 +400,11 @@ namespace Snake
                 return true;
             }
 
-            // Check self-collision
-            if (_snake.Contains(position))
+            // Check self-collision (exclude the tail if it will move)
+            for (int i = 0; i < _snake.Count - 1; i++)
             {
-                return true;
+                if (_snake[i] == position)
+                    return true;
             }
 
             return false;
