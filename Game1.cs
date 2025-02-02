@@ -3,6 +3,8 @@ using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using System.Collections.Generic;
 using System;
+using System.Linq;
+using System.IO;
 
 namespace Snake
 {
@@ -46,7 +48,19 @@ namespace Snake
 
         private int _score = 0;
 
+        // Add these variables at the top of your Game1 class
+        private int _highScore = 0;
+        private string _highScoreFilePath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "MySnakeGame", "highscore.txt");
+
         private GameMode _gameMode;
+
+        // Base accessible space weight
+        private double accessibleSpaceWeight = 0.1;
+
+        // Variables to track length intervals
+        private int previousLengthInterval = 0;
 
         public enum GameState
         {
@@ -87,6 +101,7 @@ namespace Snake
         protected override void Initialize()
         {
             // TODO: Add your initialization logic here
+            LoadHighScore();
             _previousState = Keyboard.GetState();
             base.Initialize();
         }
@@ -147,6 +162,12 @@ namespace Snake
             }
             else if (_currentGameState == GameState.GameOver)
             {
+                if (_score > _highScore)
+                {
+                    _highScore = _score;
+                    SaveHighScore();
+                }
+
                 if (state.IsKeyDown(Keys.Enter) && !_previousState.IsKeyDown(Keys.Enter))
                 {
                     _currentGameState = GameState.Menu;
@@ -186,17 +207,26 @@ namespace Snake
 
         private void DrawMenu()
         {
-            Vector2 size = _menuFont.MeasureString("Snake Game");
-            _spriteBatch.DrawString(_menuFont, "Snake Game", new Vector2(
-                (GraphicsDevice.Viewport.Width - size.X) / 2,
-                (GraphicsDevice.Viewport.Height - size.Y) / 2 - 100), Color.White);
+            string title = "Snake Game";
+            Vector2 titleSize = _menuFont.MeasureString(title);
+            _spriteBatch.DrawString(_menuFont, title, new Vector2(
+                (GraphicsDevice.Viewport.Width - titleSize.X) / 2,
+                100), Color.White);
+
+            // Display the High Score below the title
+            string highScoreText = $"High Score: {_highScore}";
+            Vector2 highScoreSize = _menuFont.MeasureString(highScoreText);
+            _spriteBatch.DrawString(_menuFont, highScoreText, new Vector2(
+                (GraphicsDevice.Viewport.Width - highScoreSize.X) / 2,
+                150), Color.Yellow);
+
             for (int i = 0; i < _menuItems.Length; i++)
             {
                 Color color = i == _selectedIndex ? Color.Yellow : Color.White;
-                size = _menuFont.MeasureString(_menuItems[i]);
+                Vector2 size = _menuFont.MeasureString(_menuItems[i]);
                 _spriteBatch.DrawString(_menuFont, _menuItems[i], new Vector2(
                     (GraphicsDevice.Viewport.Width - size.X) / 2,
-                    (GraphicsDevice.Viewport.Height - size.Y) / 2 + i * 30), color);
+                    250 + i * 40), color);
             }
         }
 
@@ -211,8 +241,13 @@ namespace Snake
             // Draw food
             _spriteBatch.Draw(_foodTexture, new Rectangle(_foodPosition.ToPoint(), new Point(_size, _size)), Color.Red);
 
-            // Draw score (optional)
-            _spriteBatch.DrawString(_menuFont, $"Score: {_score}", new Vector2(10, 10), Color.White);
+            // Display current score
+            string scoreText = $"Score: {_score}";
+            _spriteBatch.DrawString(_menuFont, scoreText, new Vector2(10, 10), Color.White);
+
+            // Display high score
+            string highScoreText = $"High Score: {_highScore}";
+            _spriteBatch.DrawString(_menuFont, highScoreText, new Vector2(10, 40), Color.Yellow);
 
             // Display the game mode
             string modeText = "";
@@ -233,16 +268,30 @@ namespace Snake
         private void DrawGameOver()
         {
             string gameOverText = "Game Over!";
-            Vector2 size = _menuFont.MeasureString(gameOverText);
+            Vector2 gameOverSize = _menuFont.MeasureString(gameOverText);
             _spriteBatch.DrawString(_menuFont, gameOverText, new Vector2(
-                (GraphicsDevice.Viewport.Width - size.X) / 2,
-                (GraphicsDevice.Viewport.Height - size.Y) / 2 - 20), Color.Red);
+                (GraphicsDevice.Viewport.Width - gameOverSize.X) / 2,
+                (GraphicsDevice.Viewport.Height - gameOverSize.Y) / 2 - 60), Color.Red);
+
+            // Display the final score
+            string scoreText = $"Your Score: {_score}";
+            Vector2 scoreSize = _menuFont.MeasureString(scoreText);
+            _spriteBatch.DrawString(_menuFont, scoreText, new Vector2(
+                (GraphicsDevice.Viewport.Width - scoreSize.X) / 2,
+                (GraphicsDevice.Viewport.Height - scoreSize.Y) / 2 - 20), Color.White);
+
+            // Display the high score
+            string highScoreText = $"High Score: {_highScore}";
+            Vector2 highScoreSize = _menuFont.MeasureString(highScoreText);
+            _spriteBatch.DrawString(_menuFont, highScoreText, new Vector2(
+                (GraphicsDevice.Viewport.Width - highScoreSize.X) / 2,
+                (GraphicsDevice.Viewport.Height - highScoreSize.Y) / 2 + 20), Color.Yellow);
 
             string instructions = "Press Enter to return to Menu";
-            size = _menuFont.MeasureString(instructions);
+            Vector2 instructionsSize = _menuFont.MeasureString(instructions);
             _spriteBatch.DrawString(_menuFont, instructions, new Vector2(
-                (GraphicsDevice.Viewport.Width - size.X) / 2,
-                (GraphicsDevice.Viewport.Height - size.Y) / 2 + 20), Color.White);
+                (GraphicsDevice.Viewport.Width - instructionsSize.X) / 2,
+                (GraphicsDevice.Viewport.Height - instructionsSize.Y) / 2 + 60), Color.White);
         }
 
         private void UpdateMenu()
@@ -315,10 +364,12 @@ namespace Snake
             {
                 SpawnFood();
                 _score += 10;
+
+                accessibleSpaceWeight = 0.1 + (_snake.Count / 450.0);
             }
             else
             {
-                // Remove the tail segment
+                // Remove the tail segment if food not eaten
                 _snake.RemoveAt(_snake.Count - 1);
             }
         }
@@ -343,34 +394,26 @@ namespace Snake
             }
         }
 
-
-        private void    ResetGame()
+        private void ResetGame()
         {
+            // Existing reset logic...
             _snake.Clear();
             _direction = new Vector2(1, 0);
             _timer = 0f;
+            _interval = 100f;
             _gameOver = false;
             _score = 0;
-            switch (_gameMode)
-            {
-                case GameMode.Human:
-                    _interval = 100f;
-                    break;
-                case GameMode.AI:
-                    _interval = 80f; // Faster for AI
-                    break;
-                case GameMode.AIAdvanced:
-                    _interval = 60f; // Even faster for advanced AI
-                    break;
-            }
+            previousLengthInterval = 0;
+            accessibleSpaceWeight = 0.1; // Reset to base weight
 
-            // Add the initial snake segment
+            // Initialize the snake
             _snake.Add(new Vector2(
                 (_graphics.PreferredBackBufferWidth / 2) / _size * _size,
                 (_graphics.PreferredBackBufferHeight / 2) / _size * _size));
 
             SpawnFood();
         }
+
 
 
         /// <summary>
@@ -448,40 +491,38 @@ namespace Snake
         {
             Vector2 head = _snake[0];
 
-            // Get directions prioritized towards the food
-            List<Vector2> possibleDirections = GetPrioritizedDirections(head, _foodPosition);
-
-            // Find a safe direction using lookahead
-            foreach (var dir in possibleDirections)
-            {
-                if (!IsFutureCollision(dir))
-                {
-                    _direction = dir;
-                    return;
-                }
-            }
-
-            // If no safe direction towards food, consider all directions
+            // Get all possible directions
             List<Vector2> allDirections = new List<Vector2>
-            {
-                new Vector2(0, -1), // Up
-                new Vector2(0, 1),  // Down
-                new Vector2(-1, 0), // Left
-                new Vector2(1, 0)   // Right
-            };
+    {
+        new Vector2(0, -1), // Up
+        new Vector2(0, 1),  // Down
+        new Vector2(-1, 0), // Left
+        new Vector2(1, 0)   // Right
+    };
+
+            // List to store possible moves with their scores
+            List<(Vector2 direction, double score)> moves = new List<(Vector2, double)>();
 
             foreach (var dir in allDirections)
             {
-                if (!IsFutureCollision(dir))
+                double score = EvaluateMove(dir);
+                if (score > double.NegativeInfinity)
                 {
-                    _direction = dir;
-                    return;
+                    moves.Add((dir, score));
                 }
             }
 
-            // If all moves lead to collision, proceed with current direction (may result in game over)
+            if (moves.Count > 0)
+            {
+                // Select the move with the highest score
+                var bestMove = moves.OrderByDescending(m => m.score).First();
+                _direction = bestMove.direction;
+            }
+            else
+            {
+                // No valid moves; proceed in current direction or handle game over scenario
+            }
         }
-
 
         private bool IsCollision(Vector2 position)
         {
@@ -521,6 +562,106 @@ namespace Snake
             }
 
             return false;
+        }
+
+        private int FloodFill(Vector2 position, int depth, HashSet<Vector2> visited)
+        {
+            // Base cases
+            if (depth <= 0 || visited.Contains(position))
+                return 0;
+
+            // Check for wall collisions
+            if (position.X < 0 || position.X >= _graphics.PreferredBackBufferWidth ||
+                position.Y < 0 || position.Y >= _graphics.PreferredBackBufferHeight)
+            {
+                return 0;
+            }
+
+            // Check for self-collision
+            if (_snake.Contains(position))
+                return 0;
+
+            visited.Add(position);
+
+            int count = 1; // Count this tile
+
+            // Explore neighboring tiles
+            Vector2[] directions = new Vector2[]
+            {
+                new Vector2(0, -1), // Up
+                new Vector2(0, 1),  // Down
+                new Vector2(-1, 0), // Left
+                new Vector2(1, 0)   // Right
+            };
+
+            foreach (var dir in directions)
+            {
+                Vector2 newPosition = position + dir * _size;
+                count += FloodFill(newPosition, depth - 1, visited);
+            }
+
+            return count;
+        }
+
+        private double EvaluateMove(Vector2 direction)
+        {
+            Vector2 newHeadPosition = _snake[0] + direction * _size;
+
+            if (IsFutureCollision(direction))
+                return double.NegativeInfinity; // Invalid move
+
+            // Calculate distance to food
+            double distanceToFood = Vector2.Distance(newHeadPosition, _foodPosition);
+
+            // Perform flood fill to assess accessible space
+            HashSet<Vector2> visited = new HashSet<Vector2>();
+            int accessibleSpace = FloodFill(newHeadPosition, 50, visited);
+
+            // Combine factors into a score
+            double score = -distanceToFood + accessibleSpaceWeight * accessibleSpace;
+
+            return score;
+        }
+
+        private void LoadHighScore()
+        {
+            try
+            {
+                if (File.Exists(_highScoreFilePath))
+                {
+                    string scoreText = File.ReadAllText(_highScoreFilePath);
+                    if (int.TryParse(scoreText, out int loadedScore))
+                    {
+                        _highScore = loadedScore;
+                    }
+                }
+                else
+                {
+                    _highScore = 0;
+                }
+            }
+            catch (Exception ex)
+            {
+                // Handle errors (e.g., log the error)
+                _highScore = 0;
+            }
+        }
+
+        private void SaveHighScore()
+        {
+            try
+            {
+                string directory = Path.GetDirectoryName(_highScoreFilePath);
+                if (!Directory.Exists(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+                File.WriteAllText(_highScoreFilePath, _highScore.ToString());
+            }
+            catch (Exception ex)
+            {
+                // Handle errors
+            }
         }
 
     }
